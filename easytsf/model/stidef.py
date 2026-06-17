@@ -66,18 +66,18 @@ class STIDEF(nn.Module):
             hidden = torch.cat((hidden, node_emb), dim=1)
 
         if self.tod_emb_dim:
-            tod = (marker_x[:, -1, :, 0] * (self.tod_size - 1)).type(torch.LongTensor)
-            tod_emb = self.tod_emb[tod].transpose(1, 2).repeat(1, 1, N)  # (B, tod_emb_dim, N)
+            tod = (marker_x[:, -1, :, 0] * (self.tod_size - 1)).long()
+            tod_emb = self.tod_emb[tod].transpose(1, 2)  # (B, tod_emb_dim, N)
             hidden = torch.cat((hidden, tod_emb), dim=1)
 
         if self.dow_emb_dim:
-            dow = (marker_x[:, -1, :, 1] * (self.dow_size - 1)).type(torch.LongTensor)
-            dow_emb = self.dow_emb[dow].transpose(1, 2).repeat(1, 1, N)
+            dow = (marker_x[:, -1, :, 1] * (self.dow_size - 1)).long()
+            dow_emb = self.dow_emb[dow].transpose(1, 2)
             hidden = torch.cat((hidden, dow_emb), dim=1)
             
         if self.eod_emb_dim:
-            eod = (marker_x[:, -1, :, -1] * (self.eod_size - 1)).type(torch.LongTensor)
-            eod_emb = self.eod_emb[eod].transpose(1, 2).repeat(1, 1, N)
+            eod = (marker_x[:, -1, :, -1] * (self.eod_size - 1)).long()
+            eod_emb = self.eod_emb[eod].transpose(1, 2)
             hidden = torch.cat((hidden, eod_emb), dim=1)
 
         hidden = self.encoder(hidden)
@@ -93,13 +93,13 @@ class STIDEF(nn.Module):
             hidden = torch.cat((hidden, node_emb), dim=1)
 
         if self.tod_emb_dim:
-            tod = (marker_x[:, -1, :, 0] * (self.tod_size - 1)).type(torch.LongTensor)
-            tod_emb = self.tod_emb[tod].transpose(1, 2).repeat(1, 1, N)  # (B, tod_emb_dim, N)
+            tod = (marker_x[:, -1, :, 0] * (self.tod_size - 1)).long()
+            tod_emb = self.tod_emb[tod].transpose(1, 2)  # (B, tod_emb_dim, N)
             hidden = torch.cat((hidden, tod_emb), dim=1)
 
         if self.dow_emb_dim:
-            dow = (marker_x[:, -1, :, 1] * (self.dow_size - 1)).type(torch.LongTensor)
-            dow_emb = self.dow_emb[dow].transpose(1, 2).repeat(1, 1, N)
+            dow = (marker_x[:, -1, :, 1] * (self.dow_size - 1)).long()
+            dow_emb = self.dow_emb[dow].transpose(1, 2)
             hidden = torch.cat((hidden, dow_emb), dim=1)
 
         hidden = self.encoder(hidden)
