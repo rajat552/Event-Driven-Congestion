@@ -213,29 +213,35 @@ class PolicySimulator:
         speeds_mitigated = np.maximum(5.0, base_speeds - L_event)
         return speeds_mitigated, A_dynamic
 
-    def simulate_mitigated_forecast(self, api, var_x, marker_x, origin_c_idx, severity_val, num_officers, num_barricades):
+    def simulate_mitigated_forecast(self, api, var_x, marker_x, origin_c_idx, severity_val, officer_allocation, num_barricades):
         """
         Uses the Deep Learning LiveInferenceAPI as the baseline forecast.
         Since the model is currently at Epoch 0 (untrained), we hybridize it by applying
         our mathematical physics decay curves on top of the AI's output array. This ensures
         the dashboard visually demonstrates the gridlock spread for hackathon judges!
+        
+        officer_allocation: dict mapping corridor_idx -> number of officers deployed.
         """
+        # Handle backward compatibility if single int is passed
+        if isinstance(officer_allocation, int):
+            officer_allocation = {origin_c_idx: officer_allocation}
+            
         # 1. Get Base AI Prediction
         base_ai_forecast = api.predict(var_x, marker_x)
         T, N = base_ai_forecast.shape
         L_event = np.zeros((T, N))
         
         # 2. Policy Impact Modifiers
-        # e.g., 20 officers (20%) + 10 barricades (10%) = 30% reduction
-        mitigation_factor = min(0.8, 0.01 * num_officers + 0.01 * num_barricades)
+        num_origin_officers = officer_allocation.get(origin_c_idx, 0)
+        mitigation_factor = min(0.8, 0.01 * num_origin_officers + 0.01 * num_barricades)
         reduced_severity = severity_val * (1.0 - mitigation_factor)
         
-        lambda_mitigated = 0.15 * (1.0 + 0.15 * num_officers)
+        lambda_mitigated_origin = 0.15 * (1.0 + 0.15 * num_origin_officers)
         spillover_factor = 0.3 * np.exp(-0.1 * num_barricades)
         
         # 3. Apply Heuristic Decay Shockwave
         for t_step in range(T):
-            decay = np.exp(-lambda_mitigated * t_step)
+            decay = np.exp(-lambda_mitigated_origin * t_step)
             # Direct hit on origin corridor
             drag = 35.0 * reduced_severity * decay
             L_event[t_step, origin_c_idx] = drag
@@ -244,13 +250,57 @@ class PolicySimulator:
             neighbors = np.where(self.A_static[origin_c_idx] > 0.1)[0]
             for n_idx in neighbors:
                 if t_step >= 2: # Spillover hits 20 mins later
-                    neigh_drag = 20.0 * reduced_severity * spillover_factor * np.exp(-lambda_mitigated * (t_step - 2))
+                    num_neigh_officers = officer_allocation.get(n_idx, 0)
+                    lambda_neigh = 0.15 * (1.0 + 0.2 * num_neigh_officers) # local officers recover neighbor faster
+                    neigh_drag = 20.0 * reduced_severity * spillover_factor * np.exp(-lambda_neigh * (t_step - 2))
                     L_event[t_step, n_idx] = neigh_drag
                     
         # Subtract the shockwave drag from the AI's base prediction
         mitigated_speeds = np.maximum(5.0, base_ai_forecast - L_event)
         
         return mitigated_speeds
+
+
+class ManpowerOptimizer:
+    """
+    Allocates a constrained budget of police personnel across the impact radius
+    to mathematically minimize network-wide congestion delay.
+    """
+    def __init__(self, A_static):
+        self.A_static = A_static
+
+    def greedy_allocation(self, sim, api, var_x, marker_x, origin_c_idx, total_officers, severity_val, num_barricades):
+        # Identify the "Impact Zone" (Origin node + immediate neighbors)
+        neighbors = np.where(self.A_static[origin_c_idx] > 0.1)[0]
+        impact_zone = [origin_c_idx] + list(neighbors)
+        
+        allocation = {idx: 0 for idx in impact_zone}
+        remaining_officers = total_officers
+        chunk_size = 5 # Evaluate in chunks of 5 officers for speed
+        
+        while remaining_officers > 0:
+            alloc_amount = min(chunk_size, remaining_officers)
+            best_idx = origin_c_idx
+            best_speed_sum = -float('inf')
+            
+            for candidate_idx in impact_zone:
+                # Test allocation scenario
+                test_allocation = allocation.copy()
+                test_allocation[candidate_idx] += alloc_amount
+                
+                test_speeds = sim.simulate_mitigated_forecast(api, var_x, marker_x, origin_c_idx, severity_val, test_allocation, num_barricades)
+                # Maximize overall speed across the impact zone
+                network_speed_sum = np.sum(test_speeds[:, impact_zone])
+                
+                if network_speed_sum > best_speed_sum:
+                    best_speed_sum = network_speed_sum
+                    best_idx = candidate_idx
+                    
+            allocation[best_idx] += alloc_amount
+            remaining_officers -= alloc_amount
+            
+        # Filter out 0 allocations
+        return {idx: count for idx, count in allocation.items() if count > 0}
 
 
 def test_recommendation_engine():

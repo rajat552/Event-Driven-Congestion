@@ -8,7 +8,7 @@ import importlib
 # Force reload the module so Streamlit doesn't use the old cached version
 import recommendation_engine
 importlib.reload(recommendation_engine)
-from recommendation_engine import TDSPGraph, PolicySimulator, CORRIDORS, CORRIDOR_LENGTHS, coords, N, corridor_to_idx
+from recommendation_engine import TDSPGraph, PolicySimulator, ManpowerOptimizer, CORRIDORS, CORRIDOR_LENGTHS, coords, N, corridor_to_idx
 
 
 # Page Config
@@ -190,13 +190,18 @@ if st.session_state.simulated_event is not None:
     crash_marker_x[:, c_idx, 4] = severity_val
     
     # 1. Unmitigated Speed (No interventions) - Officers and Barricades = 0
-    speeds_unmit = sim.simulate_mitigated_forecast(api, var_x, crash_marker_x, c_idx, severity_val, 0, 0)
+    speeds_unmit = sim.simulate_mitigated_forecast(api, var_x, crash_marker_x, c_idx, severity_val, {c_idx: 0}, 0)
+    
+    # Run Optimization Algorithm
+    optimizer = ManpowerOptimizer(A_static)
+    st.session_state.optimal_allocation = optimizer.greedy_allocation(sim, api, var_x, crash_marker_x, c_idx, officers, severity_val, barricades)
     
     # 2. Mitigated Speed (With current sliders values)
-    speeds_mit = sim.simulate_mitigated_forecast(api, var_x, crash_marker_x, c_idx, severity_val, officers, barricades)
+    speeds_mit = sim.simulate_mitigated_forecast(api, var_x, crash_marker_x, c_idx, severity_val, st.session_state.optimal_allocation, barricades)
 else:
     speeds_unmit = api.predict(var_x, marker_x)
     speeds_mit = speeds_unmit.copy()
+    st.session_state.optimal_allocation = {}
 
 # Time Step Slider
 selected_t = st.slider(f"🕰️ Forecast Horizon (10-minute intervals from Live Frame {st.session_state.current_step})", min_value=0, max_value=steps_window - 1, value=0, step=1)
@@ -402,6 +407,18 @@ with route_col:
         st.markdown(f"- **Severity Level**: {sim_severity}")
     else:
         st.success("🟢 **SYSTEM NORMAL**: No active events.")
+
+    st.markdown("---")
+    st.markdown("#### 👮 Optimal Resource Deployment Roster")
+    if st.session_state.simulated_event is not None and sum(st.session_state.optimal_allocation.values()) > 0:
+        alloc = st.session_state.optimal_allocation
+        st.markdown(f"**Total Officers Deployed**: {sum(alloc.values())}")
+        for corridor_idx, count in alloc.items():
+            st.info(f"📍 Deploy **{count} officers** to **{CORRIDORS[corridor_idx]}**")
+    elif st.session_state.simulated_event is not None:
+        st.warning("No officers deployed. Use the sidebar slider to allocate resources.")
+    else:
+        st.write("Awaiting event injection...")
 
     st.markdown("---")
     st.markdown("#### AI Intelligence & Alerts")
