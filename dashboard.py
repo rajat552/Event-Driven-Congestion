@@ -323,7 +323,7 @@ with route_col:
 
     st.markdown("#### Dynamic Routing Results:")
     if path_mit:
-        st.markdown(f"**Route**: ` ➔ `.join([CORRIDORS[n] for n in path_mit])")
+        st.markdown(f"**Route**: **{' ➔ '.join([CORRIDORS[n] for n in path_mit])}**")
         st.markdown(f"⏱️ **Traversing Duration**: `{time_mit:.1f} minutes`")
         
         # Policy impact evaluation card

@@ -2,6 +2,7 @@ import argparse
 import importlib
 import importlib.util
 import os
+import torch
 
 import lightning.pytorch as L
 from lightning.pytorch.callbacks import LearningRateMonitor, ModelCheckpoint, EarlyStopping
@@ -74,8 +75,28 @@ def train_func(hyper_conf, conf):
             {conf["val_metric"]: conf["val_metric"]}, save_checkpoints=False, on="validation_end"))
 
 
+    # Dynamic accelerator and devices config
+    devices = conf["devices"]
+    if isinstance(devices, str) and (devices.lower() == 'cpu' or 'cpu' in devices):
+        accelerator = "cpu"
+        devices = 1
+    elif isinstance(devices, str) and devices.lower() == 'auto':
+        accelerator = "auto"
+        devices = "auto"
+    elif devices == '0,' or (isinstance(devices, str) and ',' in devices):
+        if torch.cuda.is_available():
+            accelerator = "gpu"
+            devices = [int(x) for x in devices.split(',') if x.strip() != '']
+        else:
+            accelerator = "cpu"
+            devices = 1
+    else:
+        accelerator = "auto"
+        devices = "auto"
+
     trainer = L.Trainer(
-        devices=conf["devices"],
+        accelerator=accelerator,
+        devices=devices,
         precision=conf["precision"] if "precision" in conf else "32-true",
         logger=run_logger,
         callbacks=callbacks,
