@@ -57,8 +57,8 @@ st.markdown("""
 
 
 # ----------------- SESSION STATE & INITIALIZATION -----------------
-if 'simulated_event' not in st.session_state:
-    st.session_state.simulated_event = None
+if 'scenario_events' not in st.session_state:
+    st.session_state.scenario_events = []
 
 if 'simulated_speeds' not in st.session_state:
     st.session_state.simulated_speeds = None
@@ -106,27 +106,29 @@ road_closure = st.sidebar.checkbox("Requires Full Road Closure")
 # Map text severity to numeric
 severity_map = {"Low": 0.3, "Medium": 0.6, "High": 1.0}
 
-if st.sidebar.button("⚡ Inject Incident into Graph"):
+sim_start_time = st.sidebar.slider("Start Time (Future 10-min steps)", min_value=0, max_value=11, value=0, step=1)
+
+if st.sidebar.button("➕ Add Event to Scenario"):
     severity_val = severity_map[sim_severity]
     if road_closure:
         severity_val = min(1.0, severity_val + 0.3)
     
-    # Simulate an incident spanning from timestep 4 to step 16 (approx 2 hours)
-    st.session_state.simulated_event = {
+    st.session_state.scenario_events.append({
         "corridor": sim_corridor,
         "c_idx": corridor_to_idx[sim_corridor],
-        "start": 4,
-        "end": 16,
+        "start_step": sim_start_time,
         "severity": severity_val,
         "cause": sim_cause
-    }
-    st.sidebar.success(f"Incident injected successfully on {sim_corridor}!")
+    })
+    st.sidebar.success(f"Added {sim_cause} on {sim_corridor} (T+{sim_start_time})!")
 
-if st.sidebar.button("🔄 Reset Graph Topology"):
-    st.session_state.simulated_event = None
+if st.sidebar.button("🔄 Clear Scenario"):
+    st.session_state.scenario_events = []
     st.session_state.simulated_speeds = None
     st.session_state.simulated_adj = None
-    st.sidebar.info("Graph reset to static baseline.")
+    if 'optimal_allocation' in st.session_state:
+        st.session_state.optimal_allocation = {}
+    st.sidebar.info("Scenario timeline cleared.")
 
 # Load AI Engines
 import sys
@@ -180,24 +182,18 @@ if st.sidebar.button("⏩ Fetch Next Live Frame"):
     st.sidebar.success(f"Fetched live traffic frame (step {step})")
 
 # Apply policy simulation via AI
-if st.session_state.simulated_event is not None:
-    evt = st.session_state.simulated_event
-    c_idx = evt["c_idx"]
-    severity_val = evt["severity"]
-    
-    # Inject crash into marker_x
+if len(st.session_state.scenario_events) > 0:
     crash_marker_x = marker_x.copy()
-    crash_marker_x[:, c_idx, 4] = severity_val
     
     # 1. Unmitigated Speed (No interventions) - Officers and Barricades = 0
-    speeds_unmit = sim.simulate_mitigated_forecast(api, var_x, crash_marker_x, c_idx, severity_val, {c_idx: 0}, 0)
+    speeds_unmit = sim.simulate_mitigated_forecast(api, var_x, crash_marker_x, st.session_state.scenario_events, 0, 0)
     
     # Run Optimization Algorithm
     optimizer = ManpowerOptimizer(A_static)
-    st.session_state.optimal_allocation = optimizer.greedy_allocation(sim, api, var_x, crash_marker_x, c_idx, officers, severity_val, barricades)
+    st.session_state.optimal_allocation = optimizer.greedy_allocation(sim, api, var_x, crash_marker_x, st.session_state.scenario_events, officers, barricades)
     
     # 2. Mitigated Speed (With current sliders values)
-    speeds_mit = sim.simulate_mitigated_forecast(api, var_x, crash_marker_x, c_idx, severity_val, st.session_state.optimal_allocation, barricades)
+    speeds_mit = sim.simulate_mitigated_forecast(api, var_x, crash_marker_x, st.session_state.scenario_events, st.session_state.optimal_allocation, barricades)
 else:
     speeds_unmit = api.predict(var_x, marker_x)
     speeds_mit = speeds_unmit.copy()
@@ -268,6 +264,23 @@ with col4:
     </div>
     """, unsafe_allow_html=True)
 
+st.sidebar.markdown("---")
+st.sidebar.header("🧭 Route Planner")
+origin = st.sidebar.selectbox("Origin Corridor", CORRIDORS, index=0)
+destination = st.sidebar.selectbox("Destination Corridor", CORRIDORS, index=10)
+start_idx = corridor_to_idx[origin]
+target_idx = corridor_to_idx[destination]
+
+# Calculate multiple diverse diversion routes
+paths_mit = graph_mit.solve_k_shortest_tdsp(start_idx, target_idx, selected_t * 10.0, speeds_mit, k=3)
+
+# Generate Infrastructure Action Plan
+infra_optimizer = InfrastructureOptimizer(A_static)
+if len(st.session_state.scenario_events) > 0:
+    infra_plan = infra_optimizer.generate_plan(st.session_state.scenario_events, barricades, paths_mit)
+else:
+    infra_plan = None
+
 # ----------------- GEOSPATIAL MAP VIEW & LAYOUT -----------------
 map_col, route_col = st.columns([2, 1])
 
@@ -289,9 +302,11 @@ with map_col:
             color = [255, 50, 50, 220]  # Red
             
         radius = 450
-        if st.session_state.simulated_event is not None:
-            if i == st.session_state.simulated_event["c_idx"]:
-                radius = 800  # Expand radius to represent the incident node
+        if len(st.session_state.scenario_events) > 0:
+            for evt in st.session_state.scenario_events:
+                if i == evt["c_idx"]:
+                    radius = 800  # Expand radius to represent the incident node
+                    break
                 
         nodes_data.append({
             "name": name,
@@ -304,24 +319,67 @@ with map_col:
 
     # Build connectivity lines for Pydeck
     lines_data = []
+    
+    # Pre-process paths for fast lookup
+    path_edges = []
+    for path, _ in paths_mit:
+        edges = set()
+        for k in range(len(path)-1):
+            u, v = path[k], path[k+1]
+            edges.add((min(u,v), max(u,v))) # Undirected for lookup
+        path_edges.append(edges)
+        
     for i in range(N):
         for j in range(i + 1, N):
             if A_static[i, j] > 0:
-                # Dynamic weight/capacity drop based on connected node speeds
-                avg_speed = (current_speeds[i] + current_speeds[j]) / 2.0
-                if avg_speed >= 40:
-                    color = [0, 220, 100, 100]
-                elif avg_speed >= 25:
-                    color = [255, 160, 0, 100]
-                else:
-                    color = [255, 50, 50, 180]
+                edge_tuple = (i, j)
+                
+                # Check if this edge is part of a diversion plan
+                is_route = False
+                color = None
+                width = 4
+                
+                if len(path_edges) > 0 and edge_tuple in path_edges[0]:
+                    color = [0, 191, 255, 255] # Neon Blue (Plan A)
+                    width = 8
+                    is_route = True
+                elif len(path_edges) > 1 and edge_tuple in path_edges[1]:
+                    color = [160, 32, 240, 255] # Neon Purple (Plan B)
+                    width = 8
+                    is_route = True
+                elif len(path_edges) > 2 and edge_tuple in path_edges[2]:
+                    color = [255, 20, 147, 255] # Neon Pink (Plan C)
+                    width = 8
+                    is_route = True
+                
+                if not is_route:
+                    # Default Dynamic weight/capacity drop based on connected node speeds
+                    avg_speed = (current_speeds[i] + current_speeds[j]) / 2.0
+                    if avg_speed >= 40:
+                        color = [0, 220, 100, 100]
+                    elif avg_speed >= 25:
+                        color = [255, 160, 0, 100]
+                    else:
+                        color = [255, 50, 50, 180]
                     
                 lines_data.append({
                     "start": [coords[CORRIDORS[i]][1], coords[CORRIDORS[i]][0]],
                     "end": [coords[CORRIDORS[j]][1], coords[CORRIDORS[j]][0]],
-                    "color": color
+                    "color": color,
+                    "width": width
                 })
     lines_df = pd.DataFrame(lines_data)
+    
+    # Build Barricade Markers
+    barricades_data = []
+    if infra_plan and infra_plan["barricades"]:
+        for n_idx, count in infra_plan["barricades"]:
+            lat, lon = coords[CORRIDORS[n_idx]]
+            barricades_data.append({
+                "coordinates": [lon, lat],
+                "color": [220, 20, 60, 255], # Crimson Red
+            })
+    barricades_df = pd.DataFrame(barricades_data)
 
     # Pydeck Layers
     line_layer = pdk.Layer(
@@ -330,7 +388,7 @@ with map_col:
         get_source_position="start",
         get_target_position="end",
         get_color="color",
-        get_width=4,
+        get_width="width",
         pickable=False
     )
 
@@ -343,6 +401,22 @@ with map_col:
         pickable=True,
         auto_highlight=True
     )
+    
+    layers_list = [line_layer, scatterplot_layer]
+    
+    if not barricades_df.empty:
+        barricade_layer = pdk.Layer(
+            "ScatterplotLayer",
+            data=barricades_df,
+            get_position="coordinates",
+            get_color="color",
+            get_radius=600,
+            get_line_color=[255, 255, 255, 255], # White border
+            get_line_width=100,
+            stroked=True,
+            pickable=False
+        )
+        layers_list.append(barricade_layer)
 
     view_state = pdk.ViewState(
         latitude=12.9716,
@@ -352,7 +426,7 @@ with map_col:
     )
 
     deck = pdk.Deck(
-        layers=[line_layer, scatterplot_layer],
+        layers=layers_list,
         initial_view_state=view_state,
         tooltip={"text": "{name}\nPredicted Speed: {speed:.1f} km/h"}
     )
@@ -360,23 +434,14 @@ with map_col:
 
 with route_col:
     st.subheader("🧭 Time-Dependent Router")
-    st.write("Calculate shortest paths dynamically accounting for future traffic congestion.")
+    st.write("Dynamic Routing Plans are calculated accounting for future traffic congestion.")
 
-    origin = st.selectbox("Origin Corridor", CORRIDORS, index=0)
-    destination = st.selectbox("Destination Corridor", CORRIDORS, index=10)
-
-    start_idx = corridor_to_idx[origin]
-    target_idx = corridor_to_idx[destination]
-
-    # Calculate multiple diverse diversion routes
-    paths_mit = graph_mit.solve_k_shortest_tdsp(start_idx, target_idx, selected_t * 10.0, speeds_mit, k=3)
-
-    # Generate Infrastructure Action Plan
-    infra_optimizer = InfrastructureOptimizer(A_static)
-    if st.session_state.simulated_event is not None:
-        infra_plan = infra_optimizer.generate_plan(st.session_state.simulated_event["c_idx"], barricades, paths_mit)
-    else:
-        infra_plan = None
+    # Map Legend for UI clarity
+    st.markdown("#### 🗺️ Map Legend")
+    st.markdown("🟢 Normal Traffic | 🟠 Heavy Traffic | 🔴 Gridlock")
+    st.markdown("🔷 **Plan A** | 🟪 **Plan B** | 🌸 **Plan C**")
+    st.markdown("🛑 **Barricade Deployed** (White-bordered red circle)")
+    st.markdown("---")
 
     st.markdown("#### 🚦 Dynamic Diversion Plans")
     if paths_mit:
@@ -407,22 +472,22 @@ with route_col:
     # Status Board of Injected Incident
     st.markdown("---")
     st.markdown("#### Event Status Board")
-    if st.session_state.simulated_event is not None:
-        evt = st.session_state.simulated_event
-        st.error(f"⚠️ **ACTIVE EVENT**: {evt['cause']}")
-        st.markdown(f"- **Location**: {evt['corridor']}")
-        st.markdown(f"- **Severity Level**: {sim_severity}")
+    if len(st.session_state.scenario_events) > 0:
+        for evt in st.session_state.scenario_events:
+            st.error(f"⚠️ **ACTIVE EVENT**: {evt['cause']} at **T+{evt['start_step']} steps**")
+            st.markdown(f"- **Location**: {evt['corridor']}")
+            st.markdown(f"- **Severity Level**: {evt['severity']:.2f}")
     else:
         st.success("🟢 **SYSTEM NORMAL**: No active events.")
 
     st.markdown("---")
     st.markdown("#### 👮 Optimal Resource Deployment Roster")
-    if st.session_state.simulated_event is not None and sum(st.session_state.optimal_allocation.values()) > 0:
+    if len(st.session_state.scenario_events) > 0 and sum(st.session_state.optimal_allocation.values()) > 0:
         alloc = st.session_state.optimal_allocation
         st.markdown(f"**Total Officers Deployed**: {sum(alloc.values())}")
         for corridor_idx, count in alloc.items():
             st.info(f"📍 Deploy **{count} officers** to **{CORRIDORS[corridor_idx]}**")
-    elif st.session_state.simulated_event is not None:
+    elif len(st.session_state.scenario_events) > 0:
         st.warning("No officers deployed. Use the sidebar slider to allocate resources.")
     else:
         st.write("Awaiting event injection...")
@@ -457,10 +522,11 @@ with route_col:
     else:
         st.info("✅ No Unplanned Anomalies Detected.")
         
-    if st.session_state.simulated_event is not None:
-        evt_c_idx = st.session_state.simulated_event["c_idx"]
-        impacts = anomaly_detector.calculate_impact_radius(severity_mit, origin_corridors=[evt_c_idx])
-        if impacts:
-            st.markdown("**Predicted Impact Radius (Spillover):**")
-            for c_idx, sev in impacts:
-                st.error(f"⚠️ {CORRIDORS[c_idx]} (Max {sev:.1f}% severity)")
+    if len(st.session_state.scenario_events) > 0:
+        for evt in st.session_state.scenario_events:
+            evt_c_idx = evt["c_idx"]
+            impacts = anomaly_detector.calculate_impact_radius(severity_mit, origin_corridors=[evt_c_idx])
+            if impacts:
+                st.markdown(f"**Predicted Impact Radius (Spillover from {evt['corridor']}):**")
+                for c_idx, sev in impacts:
+                    st.error(f"⚠️ {CORRIDORS[c_idx]} (Max {sev:.1f}% severity)")
