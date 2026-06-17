@@ -181,6 +181,36 @@ class PolicySimulator:
         speeds_mitigated = np.maximum(5.0, base_speeds - L_event)
         return speeds_mitigated, A_dynamic
 
+    def simulate_mitigated_forecast(self, api, var_x, marker_x, origin_c_idx, num_officers, num_barricades):
+        """
+        Uses the Deep Learning LiveInferenceAPI to forecast mitigated traffic.
+        Reduces the event severity mathematically based on allocated resources,
+        then queries the AI model for a physics-grounded prediction.
+        
+        Args:
+            api: LiveInferenceAPI instance.
+            var_x: (L, N, 1) historical speeds.
+            marker_x: (L, N, 5) time and event markers.
+            origin_c_idx: corridor index of the event.
+            num_officers: number of police officers deployed.
+            num_barricades: number of barricades deployed.
+        """
+        # Calculate severity reduction factor
+        # e.g., 20 officers (20%) + 10 barricades (10%) = 30% reduction
+        mitigation_factor = min(0.8, 0.01 * num_officers + 0.01 * num_barricades)
+        
+        # Clone marker_x
+        mitigated_marker = marker_x.copy()
+        
+        # Index 4 is the event severity/shock feature
+        original_severity = mitigated_marker[:, origin_c_idx, 4]
+        mitigated_marker[:, origin_c_idx, 4] = original_severity * (1.0 - mitigation_factor)
+        
+        # Run AI prediction
+        mitigated_speeds = api.predict(var_x, mitigated_marker)
+        
+        return mitigated_speeds
+
 
 def test_recommendation_engine():
     print("--- Testing recommendation_engine.py ---")
