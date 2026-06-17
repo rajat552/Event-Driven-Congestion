@@ -70,7 +70,7 @@ if __name__ == "__main__":
     from script.mock_stream import MockTrafficStream
     from script.traffic_metrics import TrafficMetrics
     from script.anomaly_detector import AnomalyDetector
-    from recommendation_engine import CORRIDORS
+    from recommendation_engine import CORRIDORS, PolicySimulator
     
     # Example checkpoint (update if a different model is trained)
     ckpt_path = "save/STIDEF_AstramBengaluru/22072b82a2/seed_0/checkpoints/epoch=0-step=492.ckpt"
@@ -80,6 +80,11 @@ if __name__ == "__main__":
         stream = MockTrafficStream()
         metrics_engine = TrafficMetrics(v_free=50.0)
         anomaly_engine = AnomalyDetector()
+        
+        # Load simulator with mock paths (they won't be used for the AI method, just for init)
+        static_adj_path = "dataset/AstramBengaluru/adj_mat.npy"
+        scaler_path = "dataset/AstramBengaluru/var_scaler_info.npz"
+        simulator = PolicySimulator(static_adj_path, scaler_path)
         
         print("\n--- Running Live Inference Test ---")
         for i in range(2):
@@ -128,6 +133,24 @@ if __name__ == "__main__":
                 print(f"  ⚠️ IMPACT RADIUS:")
                 for c_idx, sev in impacts:
                     print(f"    - Will spill over to {CORRIDORS[c_idx]} (Max {sev:.1f}% severity)")
+                    
+            print(f"\n  --- Testing AI Policy Simulator ---")
+            # Unmitigated was `prediction`
+            # Let's artificially inject severity into the original marker_x so we can mitigate it
+            crash_marker_x = marker_x.copy()
+            crash_marker_x[:, 5, 4] = 1.0 # 100% severity crash input
+            
+            # 1. Unmitigated Prediction
+            unmitigated_speeds = api.predict(var_x, crash_marker_x)
+            unmit_sev, unmit_delay = metrics_engine.calculate_metrics(unmitigated_speeds)
+            print(f"  Unmitigated Max Delay: {unmit_delay.max():.1f} mins")
+            
+            # 2. Mitigated Prediction (Deploy 30 Officers, 10 Barricades)
+            mitigated_speeds = simulator.simulate_mitigated_forecast(
+                api, var_x, crash_marker_x, origin_c_idx=5, num_officers=30, num_barricades=10
+            )
+            mit_sev, mit_delay = metrics_engine.calculate_metrics(mitigated_speeds)
+            print(f"  Mitigated Max Delay:   {mit_delay.max():.1f} mins (Deploying 30 Officers, 10 Barricades)")
             print("\n")
             
     except FileNotFoundError as e:
