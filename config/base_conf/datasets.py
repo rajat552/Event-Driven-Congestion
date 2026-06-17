@@ -16,6 +16,7 @@ AstramBengaluru_conf = dict(
     freq=10,
     eod_size=3,
     data_split=[31536, 10512, 10512],  # 60%, 20%, 20% split of 52560 steps
+    doy2embedding_path="AstramBengaluru/event_embeddings.pickle",
     max_event_per_day=3,
 )
 

@@ -9,7 +9,7 @@ from .stid import STID
 
 
 class T3STID(nn.Module):
-    def __init__(self, pred_len, var_num, data_root, event_emb_dim=1024, hidden_event_emb_dim=256, pretrained_model_path=None, doy2embedding_path=None, event_fuse_type='max'):
+    def __init__(self, pred_len, var_num, data_root, event_emb_dim=384, hidden_event_emb_dim=256, pretrained_model_path=None, doy2embedding_path=None, event_fuse_type='max'):
         super(T3STID, self).__init__()
         self.event_emb_dim = event_emb_dim
         self.hidden_event_emb_dim = hidden_event_emb_dim
