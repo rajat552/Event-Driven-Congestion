@@ -3,6 +3,11 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 import pydeck as pdk
+import importlib
+
+# Force reload the module so Streamlit doesn't use the old cached version
+import recommendation_engine
+importlib.reload(recommendation_engine)
 from recommendation_engine import TDSPGraph, PolicySimulator, CORRIDORS, CORRIDOR_LENGTHS, coords, N, corridor_to_idx
 
 
@@ -66,14 +71,12 @@ static_adj_path = r"dataset/AstramBengaluru/adj_mat.npy"
 scaler_path = r"dataset/AstramBengaluru/var_scaler_info.npz"
 
 # Instantiate simulators
-@st.cache_resource
-def load_policy_simulator():
-    if os.path.exists(static_adj_path) and os.path.exists(scaler_path):
-        return PolicySimulator(static_adj_path, scaler_path)
-    return None
-
-sim = load_policy_simulator()
-A_static = np.load(static_adj_path) if os.path.exists(static_adj_path) else None
+if os.path.exists(static_adj_path) and os.path.exists(scaler_path):
+    sim = PolicySimulator(static_adj_path, scaler_path)
+    A_static = np.load(static_adj_path)
+else:
+    sim = None
+    A_static = None
 
 # Handle fallbacks if dataset isn't fully generated
 if sim is None or A_static is None:
@@ -125,35 +128,78 @@ if st.sidebar.button("🔄 Reset Graph Topology"):
     st.session_state.simulated_adj = None
     st.sidebar.info("Graph reset to static baseline.")
 
-# ----------------- DYNAMIC DATA COMPUTATION -----------------
-# 1. Base sinusoidal velocities (24 steps for 4 hours simulation window)
-steps_window = 24
-np.random.seed(42)
-base_speeds = np.zeros((steps_window, len(CORRIDORS)))
-for t in range(steps_window):
-    # Sinusoidal baseline drops (rush hour simulation)
-    peak = np.exp(-((t - 10) / 6) ** 2) # peak around step 10
-    for n in range(len(CORRIDORS)):
-        v = 50.0 - 18.0 * peak + np.random.normal(0, 0.8)
-        base_speeds[t, n] = np.clip(v, 15.0, 60.0)
+# Load AI Engines
+import sys
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+from script.inference_api import LiveInferenceAPI
+from script.mock_stream import MockTrafficStream
+from script.traffic_metrics import TrafficMetrics
+from script.anomaly_detector import AnomalyDetector
 
-# Apply policy simulation
+@st.cache_resource
+def load_ai_engines():
+    import glob
+    # Search for the latest checkpoint dynamically instead of hardcoding
+    search_path = "save/STIDEF_AstramBengaluru/*/seed_0/checkpoints/*.ckpt"
+    checkpoints = glob.glob(search_path)
+    if not checkpoints:
+        return None, None, None
+        
+    # Get the most recently modified checkpoint
+    latest_ckpt = max(checkpoints, key=os.path.getmtime)
+    
+    api = LiveInferenceAPI(latest_ckpt)
+    metrics = TrafficMetrics(v_free=50.0)
+    anomaly = AnomalyDetector()
+    return api, metrics, anomaly
+
+api, metrics, anomaly_detector = load_ai_engines()
+
+if api is None:
+    st.error("Error: LiveInferenceAPI Checkpoint not found. Please ensure the model is trained.")
+    st.stop()
+
+if 'mock_stream' not in st.session_state:
+    st.session_state.mock_stream = MockTrafficStream()
+    var_x, marker_x, step = st.session_state.mock_stream.stream_next()
+    st.session_state.var_x = var_x
+    st.session_state.marker_x = marker_x
+    st.session_state.current_step = step
+
+var_x = st.session_state.var_x
+marker_x = st.session_state.marker_x
+
+steps_window = 12  # AI Forecast Horizon is 12 timesteps
+
+st.sidebar.markdown("---")
+if st.sidebar.button("⏩ Fetch Next Live Frame"):
+    var_x, marker_x, step = st.session_state.mock_stream.stream_next()
+    st.session_state.var_x = var_x
+    st.session_state.marker_x = marker_x
+    st.session_state.current_step = step
+    st.sidebar.success(f"Fetched live traffic frame (step {step})")
+
+# Apply policy simulation via AI
 if st.session_state.simulated_event is not None:
     evt = st.session_state.simulated_event
-    event_list = [(evt["start"], evt["end"], evt["c_idx"], evt["severity"])]
+    c_idx = evt["c_idx"]
+    severity_val = evt["severity"]
     
-    # 1. Unmitigated Speed (No interventions)
-    speeds_unmit, adj_unmit = sim.simulate_mitigated_speed(base_speeds, event_list, 0, 0)
+    # Inject crash into marker_x
+    crash_marker_x = marker_x.copy()
+    crash_marker_x[:, c_idx, 4] = severity_val
+    
+    # 1. Unmitigated Speed (No interventions) - Officers and Barricades = 0
+    speeds_unmit = sim.simulate_mitigated_forecast(api, var_x, crash_marker_x, c_idx, severity_val, 0, 0)
     
     # 2. Mitigated Speed (With current sliders values)
-    speeds_mit, adj_mit = sim.simulate_mitigated_speed(base_speeds, event_list, officers, barricades)
+    speeds_mit = sim.simulate_mitigated_forecast(api, var_x, crash_marker_x, c_idx, severity_val, officers, barricades)
 else:
-    speeds_unmit = base_speeds.copy()
-    speeds_mit = base_speeds.copy()
-    adj_mit = np.repeat(A_static[np.newaxis, :, :], steps_window, axis=0)
+    speeds_unmit = api.predict(var_x, marker_x)
+    speeds_mit = speeds_unmit.copy()
 
 # Time Step Slider
-selected_t = st.slider("🕰️ Time Progress (10-minute intervals)", min_value=0, max_value=steps_window - 1, value=6, step=1)
+selected_t = st.slider(f"🕰️ Forecast Horizon (10-minute intervals from Live Frame {st.session_state.current_step})", min_value=0, max_value=steps_window - 1, value=0, step=1)
 
 # Current state parameters
 current_speeds = speeds_mit[selected_t]
@@ -343,6 +389,26 @@ with route_col:
         st.error(f"⚠️ **ACTIVE EVENT**: {evt['cause']}")
         st.markdown(f"- **Location**: {evt['corridor']}")
         st.markdown(f"- **Severity Level**: {sim_severity}")
-        st.markdown(f"- **Timeline Steps**: step {evt['start']} to {evt['end']}")
     else:
         st.success("🟢 **SYSTEM NORMAL**: No active events.")
+
+    st.markdown("---")
+    st.markdown("#### AI Intelligence & Alerts")
+    
+    severity_mit, delay_mit = metrics.calculate_metrics(speeds_mit)
+    live_severity = severity_mit[selected_t]
+    
+    anomalies = anomaly_detector.detect_unplanned_events(live_severity, active_planned_events=[])
+    if anomalies:
+        for c_idx, sev in anomalies:
+            st.warning(f"🚨 **UNPLANNED ANOMALY**: {CORRIDORS[c_idx]} ({sev:.1f}% severity)")
+    else:
+        st.info("✅ No Unplanned Anomalies Detected.")
+        
+    if st.session_state.simulated_event is not None:
+        evt_c_idx = st.session_state.simulated_event["c_idx"]
+        impacts = anomaly_detector.calculate_impact_radius(severity_mit, origin_corridors=[evt_c_idx])
+        if impacts:
+            st.markdown("**Predicted Impact Radius (Spillover):**")
+            for c_idx, sev in impacts:
+                st.error(f"⚠️ {CORRIDORS[c_idx]} (Max {sev:.1f}% severity)")

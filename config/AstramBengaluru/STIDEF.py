@@ -10,5 +10,7 @@ exp_conf = dict(
     dow_emb_dim=32,
     eod_emb_dim=32,
 
-    lr=0.01
+    lr=0.01,
+    max_epochs=5,
+    batch_size=32
 )
