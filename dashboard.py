@@ -8,7 +8,7 @@ import importlib
 # Force reload the module so Streamlit doesn't use the old cached version
 import recommendation_engine
 importlib.reload(recommendation_engine)
-from recommendation_engine import TDSPGraph, PolicySimulator, ManpowerOptimizer, CORRIDORS, CORRIDOR_LENGTHS, coords, N, corridor_to_idx
+from recommendation_engine import TDSPGraph, PolicySimulator, ManpowerOptimizer, InfrastructureOptimizer, CORRIDORS, CORRIDOR_LENGTHS, coords, N, corridor_to_idx
 
 
 # Page Config
@@ -371,6 +371,13 @@ with route_col:
     # Calculate multiple diverse diversion routes
     paths_mit = graph_mit.solve_k_shortest_tdsp(start_idx, target_idx, selected_t * 10.0, speeds_mit, k=3)
 
+    # Generate Infrastructure Action Plan
+    infra_optimizer = InfrastructureOptimizer(A_static)
+    if st.session_state.simulated_event is not None:
+        infra_plan = infra_optimizer.generate_plan(st.session_state.simulated_event["c_idx"], barricades, paths_mit)
+    else:
+        infra_plan = None
+
     st.markdown("#### 🚦 Dynamic Diversion Plans")
     if paths_mit:
         for i, (path, travel_time) in enumerate(paths_mit):
@@ -417,6 +424,23 @@ with route_col:
             st.info(f"📍 Deploy **{count} officers** to **{CORRIDORS[corridor_idx]}**")
     elif st.session_state.simulated_event is not None:
         st.warning("No officers deployed. Use the sidebar slider to allocate resources.")
+    else:
+        st.write("Awaiting event injection...")
+
+    st.markdown("---")
+    st.markdown("#### 🚧 Infrastructure Action Plan")
+    if infra_plan:
+        if infra_plan["barricades"]:
+            st.markdown("**⛔ Access Restrictions (Barricades)**:")
+            for n_idx, count in infra_plan["barricades"]:
+                st.error(f"Deploy **{count} barricades** at intersection with **{CORRIDORS[n_idx]}** to choke spillover.")
+        else:
+            st.info("No barricades deployed. Use the slider to restrict access.")
+            
+        if infra_plan["signals"]:
+            st.markdown("**🚦 Signal Timing Overrides (Green Phase Extensions)**:")
+            signal_corridors = [f"**{CORRIDORS[n]}**" for n in infra_plan["signals"]]
+            st.success(f"Extend green phase by +30s on: {', '.join(signal_corridors)}")
     else:
         st.write("Awaiting event injection...")
 

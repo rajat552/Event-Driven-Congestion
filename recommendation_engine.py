@@ -303,6 +303,55 @@ class ManpowerOptimizer:
         return {idx: count for idx, count in allocation.items() if count > 0}
 
 
+class InfrastructureOptimizer:
+    """
+    Generates tactical physical infrastructure recommendations based on graph topology
+    and multi-path diversion routing outputs.
+    """
+    def __init__(self, A_static):
+        self.A_static = A_static
+
+    def generate_plan(self, origin_c_idx, num_barricades, diversion_routes):
+        """
+        diversion_routes: list of (path, travel_time) from solve_k_shortest_tdsp
+        """
+        plan = {
+            "barricades": [],
+            "signals": []
+        }
+        
+        if num_barricades > 0:
+            # 1. Barricade Logic: Choke off incoming heavy flow to the origin
+            # Find corridors that feed into the origin corridor
+            neighbors = np.where(self.A_static[:, origin_c_idx] > 0.1)[0]
+            # Sort neighbors by connection weight (highest flow capacity first)
+            neighbor_weights = [(n_idx, self.A_static[n_idx, origin_c_idx]) for n_idx in neighbors]
+            neighbor_weights.sort(key=lambda x: x[1], reverse=True)
+            
+            assigned_barricades = 0
+            for n_idx, weight in neighbor_weights:
+                if assigned_barricades >= num_barricades:
+                    break
+                # Assign up to 2 barricades per intersection to spread them out
+                allocation = min(2, num_barricades - assigned_barricades)
+                plan["barricades"].append((n_idx, allocation))
+                assigned_barricades += allocation
+            
+        # 2. Signal Logic: Extend green phases on diversion routes
+        unique_diversion_nodes = set()
+        for path, _ in diversion_routes:
+            for node in path:
+                unique_diversion_nodes.add(node)
+                
+        # Do not extend signals at the crash site or its immediate bottlenecks
+        if origin_c_idx in unique_diversion_nodes:
+            unique_diversion_nodes.remove(origin_c_idx)
+            
+        plan["signals"] = list(unique_diversion_nodes)
+        
+        return plan
+
+
 def test_recommendation_engine():
     print("--- Testing recommendation_engine.py ---")
     static_adj_path = r"dataset/AstramBengaluru/adj_mat.npy"
