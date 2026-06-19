@@ -55,8 +55,8 @@ class LiveInferenceAPI:
     Live Inference API using True PyTorch Forward-Passes.
     Loads trained .pth weights and executes tensor predictions.
     """
-    def __init__(self, checkpoint_path, num_nodes=22, hist_len=12, pred_len=12, device=None):
-        print(f"Loading True PyTorch Inference Engine...")
+    def __init__(self, checkpoint_path, num_nodes=21, hist_len=12, pred_len=12, device=None, scaler_path=None):
+        print("Loading True PyTorch Inference Engine...")
         
         if device is None:
             self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -72,8 +72,13 @@ class LiveInferenceAPI:
         print(f"Model loaded successfully on {self.device}!")
         
         # Scaler parameters for inverse transform (from dataset)
-        self.mean = 35.0
-        self.std = 15.0
+        if scaler_path and os.path.exists(scaler_path):
+            scaler = np.load(scaler_path)
+            self.mean = torch.tensor(scaler['mean'], dtype=torch.float32, device=self.device)
+            self.std = torch.tensor(scaler['std'], dtype=torch.float32, device=self.device)
+        else:
+            self.mean = 35.0
+            self.std = 15.0
 
     def predict(self, var_x, marker_x):
         """
