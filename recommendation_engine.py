@@ -2,70 +2,23 @@ import os
 import heapq
 import numpy as np
 import pandas as pd
+import json
 
-# Define 22 Bengaluru Corridors
-CORRIDORS = [
-    'Tumkur Road', 'ORR East 1', 'Non-corridor', 'CBD 2', 'ORR East 2',
-    'ORR West 1', 'ORR North 1', 'Old Madras Road', 'Bellary Road 2',
-    'Bellary Road 1', 'Hosur Road', 'Bannerghata Road', 'ORR North 2',
-    'Magadi Road', 'IRR(Thanisandra road)', 'Mysore Road', 'West of Chord Road',
-    'CBD 1', 'Old Airport Road', 'Hennur Main Road', 'Airport New South Road',
-    'Varthur Road'
-]
+# Define Bengaluru Corridors dynamically
+try:
+    with open("data/city_network.json", "r") as f:
+        network_data = json.load(f)
+        CORRIDORS = network_data["CORRIDORS"]
+        CORRIDOR_LENGTHS = network_data["CORRIDOR_LENGTHS"]
+        coords = network_data["coords"]
+except FileNotFoundError:
+    print("Warning: data/city_network.json not found. Falling back to default empty structures.")
+    CORRIDORS = []
+    CORRIDOR_LENGTHS = {}
+    coords = {}
+
 N = len(CORRIDORS)
 corridor_to_idx = {c: i for i, c in enumerate(CORRIDORS)}
-
-# Corridor Lengths (km)
-CORRIDOR_LENGTHS = {
-    'Tumkur Road': 12.0,
-    'ORR East 1': 15.0,
-    'Non-corridor': 8.0,
-    'CBD 2': 4.0,
-    'ORR East 2': 15.0,
-    'ORR West 1': 15.0,
-    'ORR North 1': 15.0,
-    'Old Madras Road': 10.0,
-    'Bellary Road 2': 18.0,
-    'Bellary Road 1': 10.0,
-    'Hosur Road': 12.0,
-    'Bannerghata Road': 14.0,
-    'ORR North 2': 15.0,
-    'Magadi Road': 10.0,
-    'IRR(Thanisandra road)': 8.0,
-    'Mysore Road': 12.0,
-    'West of Chord Road': 8.0,
-    'CBD 1': 4.0,
-    'Old Airport Road': 8.0,
-    'Hennur Main Road': 9.0,
-    'Airport New South Road': 10.0,
-    'Varthur Road': 8.0,
-}
-
-# Coordinate mapping
-coords = {
-    'Tumkur Road': (13.03146, 77.53366),
-    'ORR East 1': (12.92831, 77.66913),
-    'Non-corridor': (12.98286, 77.59869),
-    'CBD 2': (12.98331, 77.59505),
-    'ORR East 2': (12.97583, 77.69603),
-    'ORR West 1': (12.92084, 77.55913),
-    'ORR North 1': (13.02455, 77.63744),
-    'Old Madras Road': (12.98091, 77.62932),
-    'Bellary Road 2': (13.10596, 77.60327),
-    'Bellary Road 1': (13.01680, 77.58640),
-    'Hosur Road': (12.91547, 77.62466),
-    'Bannerghata Road': (12.89638, 77.59788),
-    'ORR North 2': (13.04193, 77.55882),
-    'Magadi Road': (12.98506, 77.52334),
-    'IRR(Thanisandra road)': (12.93751, 77.62694),
-    'Mysore Road': (12.95779, 77.56365),
-    'West of Chord Road': (12.98297, 77.54634),
-    'CBD 1': (12.98102, 77.60682),
-    'Old Airport Road': (12.95887, 77.66185),
-    'Hennur Main Road': (13.05115, 77.62619),
-    'Airport New South Road': (13.02752, 77.63353),
-    'Varthur Road': (12.95655, 77.71594),
-}
 
 
 class TDSPGraph:
