@@ -3,6 +3,7 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 import json
+import pydeck as pdk
 import importlib
 
 import recommendation_engine
@@ -149,7 +150,7 @@ with st.sidebar.expander("🧭 Time-Dependent Route Planner", expanded=False):
 import sys
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from script.inference_api import LiveInferenceAPI
-from script.mock_stream import MockTrafficStream
+from script.live_traffic_api import LiveTrafficStream
 from script.traffic_metrics import TrafficMetrics
 from script.anomaly_detector import AnomalyDetector
 
@@ -177,7 +178,7 @@ if api is None:
     st.stop()
 
 if 'mock_stream' not in st.session_state:
-    st.session_state.mock_stream = MockTrafficStream()
+    st.session_state.mock_stream = LiveTrafficStream()
     var_x, marker_x, step = st.session_state.mock_stream.stream_next()
     st.session_state.var_x = var_x
     st.session_state.marker_x = marker_x
@@ -557,13 +558,16 @@ with tab1:
         if len(st.session_state.scenario_events) > 0:
             if st.button("💾 Save Scenario to Historical Database"):
                 import time
+                first_c_idx = st.session_state.scenario_events[0]["c_idx"] if len(st.session_state.scenario_events) > 0 else 0
                 new_event = {
                     "id": int(time.time()),
                     "name": f"{len(st.session_state.scenario_events)} Events at {time.strftime('%Y-%m-%d %H:%M')}",
                     "events": st.session_state.scenario_events,
                     "officers_deployed": sum(st.session_state.optimal_allocation.values()) if "optimal_allocation" in st.session_state else 0,
                     "barricades": sum([c for _, c in infra_plan["barricades"]]) if infra_plan and "barricades" in infra_plan else 0,
-                    "timestamp": time.strftime("%Y-%m-%d %H:%M")
+                    "timestamp": time.strftime("%Y-%m-%d %H:%M"),
+                    "pred_unmitigated": speeds_unmit[:, first_c_idx].tolist() if speeds_unmit is not None else [],
+                    "actual_mitigated": speeds_mit[:, first_c_idx].tolist() if speeds_mit is not None else []
                 }
                 try:
                     with open("database/historical_events.json", "r") as f:
@@ -611,15 +615,20 @@ with tab2:
         with analysis_col2:
             st.subheader("Predicted vs Actual Congestion Comparison")
             
-            # Use real metrics for demonstration
+            # Use real metrics from the True PyTorch Inference saved in DB
             t_axis = np.arange(0, 120, 10) 
             
-            base_speed = 40.0
-            drop = sum([e["severity"] * 10 for e in evt_data["events"]])
-            if drop == 0: drop = 20.0
-                
-            pred_unmitigated = base_speed - drop * np.exp(-0.05 * t_axis)
-            actual_mitigated = base_speed - (drop * 0.4) * np.exp(-0.15 * t_axis) + np.random.normal(0, 1.5, len(t_axis))
+            # Fetch directly from DB instead of using mathematical equations
+            pred_unmitigated = evt_data.get("pred_unmitigated", [])
+            actual_mitigated = evt_data.get("actual_mitigated", [])
+            
+            # Fallback if DB is old or missing data
+            if not pred_unmitigated or len(pred_unmitigated) != 12:
+                base_speed = 40.0
+                drop = sum([e["severity"] * 10 for e in evt_data["events"]])
+                if drop == 0: drop = 20.0
+                pred_unmitigated = base_speed - drop * np.exp(-0.05 * t_axis)
+                actual_mitigated = base_speed - (drop * 0.4) * np.exp(-0.15 * t_axis) + np.random.normal(0, 1.5, len(t_axis))
             
             chart_data = pd.DataFrame({
                 "Time (mins)": t_axis,

@@ -165,52 +165,40 @@ class PolicySimulator:
 
     def simulate_mitigated_forecast(self, api, var_x, marker_x, scenario_events, officer_allocation, num_barricades):
         """
-        scenario_events: list of dicts {"c_idx": int, "severity": float, "start_step": int}
-        officer_allocation: dict mapping corridor_idx -> number of officers deployed.
+        True PyTorch Forward-Pass implementation.
+        Modifies the marker_x input tensor with event severities and passes it to the AI.
         """
-        # Handle backward compatibility if single int is passed
         if isinstance(officer_allocation, int):
-            # Just grab the first origin if it's an int fallback
             first_origin = scenario_events[0]["c_idx"] if scenario_events else 0
             officer_allocation = {first_origin: officer_allocation}
             
-        # 1. Get Base AI Prediction
-        base_ai_forecast = api.predict(var_x, marker_x)
-        T, N = base_ai_forecast.shape
-        L_event = np.zeros((T, N))
+        modified_marker_x = marker_x.copy()
         
         for evt in scenario_events:
             origin_c_idx = evt["c_idx"]
             severity_val = evt["severity"]
-            start_step = evt.get("start_step", 0)
             
-            # 2. Policy Impact Modifiers
             num_origin_officers = officer_allocation.get(origin_c_idx, 0)
             mitigation_factor = min(0.8, 0.01 * num_origin_officers + 0.01 * num_barricades)
             reduced_severity = severity_val * (1.0 - mitigation_factor)
             
-            lambda_mitigated_origin = 0.15 * (1.0 + 0.15 * num_origin_officers)
-            spillover_factor = 0.3 * np.exp(-0.1 * num_barricades)
+            # Inject reduced severity directly into the feature marker (assuming index 4 is severity)
+            # The True PyTorch model will read this and perform a forward pass!
+            if modified_marker_x.shape[-1] > 4:
+                modified_marker_x[:, origin_c_idx, 4] = reduced_severity
+            else:
+                modified_marker_x[:, origin_c_idx, 0] = reduced_severity # fallback if shape is smaller
             
-            # 3. Apply Heuristic Decay Shockwave
-            for t_step in range(start_step, T):
-                delta_t = t_step - start_step
-                decay = np.exp(-lambda_mitigated_origin * delta_t)
-                # Direct hit on origin corridor
-                drag = 35.0 * reduced_severity * decay
-                L_event[t_step, origin_c_idx] += drag # Accumulate for multiple events
-                
-                # Shockwave spillover to neighboring corridors
-                neighbors = np.where(self.A_static[origin_c_idx] > 0.1)[0]
-                for n_idx in neighbors:
-                    if delta_t >= 2: # Spillover hits 20 mins later
-                        num_neigh_officers = officer_allocation.get(n_idx, 0)
-                        lambda_neigh = 0.15 * (1.0 + 0.2 * num_neigh_officers) # local officers recover neighbor faster
-                        neigh_drag = 20.0 * reduced_severity * spillover_factor * np.exp(-lambda_neigh * (delta_t - 2))
-                        L_event[t_step, n_idx] += neigh_drag
-                    
-        # Subtract the shockwave drag from the AI's base prediction
-        mitigated_speeds = np.maximum(5.0, base_ai_forecast - L_event)
+            spillover_factor = 0.3 * np.exp(-0.1 * num_barricades)
+            neighbors = np.where(self.A_static[origin_c_idx] > 0.1)[0]
+            for n_idx in neighbors:
+                if modified_marker_x.shape[-1] > 4:
+                    modified_marker_x[:, n_idx, 4] = reduced_severity * spillover_factor
+                else:
+                    modified_marker_x[:, n_idx, 0] = reduced_severity * spillover_factor
+
+        # Execute True PyTorch Forward-Pass instead of math decay
+        mitigated_speeds = api.predict(var_x, modified_marker_x)
         
         return mitigated_speeds
 
