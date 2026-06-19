@@ -7,7 +7,8 @@ import pydeck as pdk
 import importlib
 
 import recommendation_engine
-from recommendation_engine import TDSPGraph, PolicySimulator, ManpowerOptimizer, InfrastructureOptimizer, CORRIDORS, CORRIDOR_LENGTHS, coords, N, corridor_to_idx, build_dynamic_adjacency_matrix
+importlib.reload(recommendation_engine)
+from recommendation_engine import TDSPGraph, PolicySimulator, ManpowerOptimizer, InfrastructureOptimizer, CORRIDORS, CORRIDOR_LENGTHS, coords, N, corridor_to_idx, build_dynamic_adjacency_matrix, HQ_CORRIDOR
 
 
 # Page Config
@@ -78,7 +79,8 @@ if 'simulated_adj' not in st.session_state:
 # Dynamic Adjacency Matrix
 A_static = build_dynamic_adjacency_matrix(CORRIDORS, coords)
 
-scaler_path = r"dataset/AstramBengaluru/var_scaler_info.npz"
+city_id = os.getenv("CITY_ID", "AstramBengaluru")
+scaler_path = f"dataset/{city_id}/var_scaler_info.npz"
 
 # Instantiate simulators
 sim = PolicySimulator(A_static, scaler_path)
@@ -144,14 +146,17 @@ import script.inference_api
 importlib.reload(script.inference_api)
 from script.inference_api import LiveInferenceAPI
 from script.live_traffic_api import LiveTrafficStream
+import script.traffic_metrics
+importlib.reload(script.traffic_metrics)
 from script.traffic_metrics import TrafficMetrics
 from script.anomaly_detector import AnomalyDetector
 
 @st.cache_resource
-def load_ai_engines():
+def load_ai_models():
     import glob
     # Search for the latest checkpoint dynamically instead of hardcoding
-    search_path = os.getenv("MODEL_CHECKPOINT_DIR", "save/STIDEF_AstramBengaluru/*/seed_0/checkpoints/*.ckpt")
+    city_id = os.getenv("CITY_ID", "AstramBengaluru")
+    search_path = os.getenv("MODEL_CHECKPOINT_DIR", f"save/STIDEF_{city_id}/*/seed_0/checkpoints/*.ckpt")
     checkpoints = glob.glob(search_path)
     if not checkpoints:
         return None, None, None
@@ -159,12 +164,12 @@ def load_ai_engines():
     # Get the most recently modified checkpoint
     latest_ckpt = max(checkpoints, key=os.path.getmtime)
     
-    api = LiveInferenceAPI(latest_ckpt)
+    api = LiveInferenceAPI(latest_ckpt, scaler_path=scaler_path, num_nodes=N)
     metrics = TrafficMetrics(v_free=50.0)
     anomaly = AnomalyDetector()
     return api, metrics, anomaly
 
-api, metrics, anomaly_detector = load_ai_engines()
+api, metrics, anomaly_detector = load_ai_models()
 
 if api is None:
     st.error("Error: LiveInferenceAPI Checkpoint not found. Please ensure the model is trained.")
@@ -227,7 +232,7 @@ if len(st.session_state.scenario_events) > 0:
     speeds_unmit = sim.simulate_mitigated_forecast(api, var_x, crash_marker_x, st.session_state.scenario_events, 0, 0)
     
     # Run Optimization Algorithm
-    optimizer = ManpowerOptimizer(A_static, coords_dict=coords, corridors=CORRIDORS)
+    optimizer = ManpowerOptimizer(A_static, coords_dict=coords, corridors=CORRIDORS, hq_corridor=HQ_CORRIDOR)
     st.session_state.optimal_allocation = optimizer.greedy_allocation(sim, api, var_x, crash_marker_x, st.session_state.scenario_events, officers, barricades)
     
     # 2. Mitigated Speed (With current sliders values)

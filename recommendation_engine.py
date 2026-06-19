@@ -11,6 +11,7 @@ try:
         CORRIDORS = network_data["CORRIDORS"]
         CORRIDOR_LENGTHS = network_data["CORRIDOR_LENGTHS"]
         coords = network_data["coords"]
+        HQ_CORRIDOR = network_data.get("HQ_CORRIDOR", CORRIDORS[0])
 except FileNotFoundError as e:
     raise FileNotFoundError("Critical: data/city_network.json is required to run the network routing.") from e
 
@@ -246,14 +247,14 @@ class ManpowerOptimizer:
     Allocates a constrained budget of police personnel across the impact radius
     to mathematically minimize network-wide congestion delay.
     """
-    def __init__(self, A_static, coords_dict=None, corridors=None):
+    def __init__(self, A_static, coords_dict=None, corridors=None, hq_corridor=None):
         self.A_static = A_static
         self.coords_dict = coords_dict
         self.corridors = corridors
         
-        # Designate CBD 1 as the Central Police HQ
-        if corridors:
-            self.hq_idx = next((i for i, c in enumerate(corridors) if c == "CBD 1"), 0)
+        # Designate Central Police HQ from config
+        if corridors and hq_corridor:
+            self.hq_idx = next((i for i, c in enumerate(corridors) if c == hq_corridor), 0)
         else:
             self.hq_idx = 0
 
