@@ -4,6 +4,7 @@ pandas
 numpy
 torch>=2.0.0
 pytorch-lightning
+lightning
 networkx
 scikit-learn
 pyyaml
