@@ -417,7 +417,7 @@ def test_recommendation_engine():
         print(f"  Travel Time: {travel_time:.2f} mins")
 
     # 2. Test Policy Simulator
-    sim = PolicySimulator(static_adj_path, scaler_path)
+    sim = PolicySimulator(A_static, scaler_path)
     base_speeds = np.full((24, N), 45.0) # 4 hours range
     active_events = [(4, 12, 10, 0.8)] # Event on corridor 10 from step 4 to 12 with high severity
     

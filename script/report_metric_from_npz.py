@@ -23,7 +23,6 @@ def masked_mae(preds: torch.Tensor, labels: torch.Tensor, null_val: float = np.n
     if np.isnan(null_val):
         mask = ~torch.isnan(labels)
     else:
-        eps = 5e-5
         # mask = ~torch.isclose(labels, torch.tensor(null_val).expand_as(labels).to(labels.device), atol=eps, rtol=0.)
         mask = labels > null_val
     used_sample_num = mask.sum()
@@ -145,7 +144,7 @@ def eval_metrics(preds: torch.Tensor, labels: torch.Tensor, null_val: float = np
 
 
 def report_trial_result(trial_dir, reported_param=None, horizon="avg"):
-    special_params, special_name = [], ''
+    special_params = []
 
     if reported_param is not None:
         trial_param_path = os.path.join(trial_dir, 'seed_0', 'hparams.yaml')
@@ -184,7 +183,6 @@ def report_trial_result(trial_dir, reported_param=None, horizon="avg"):
 
             prediction = torch.tensor(prediction)
             label = torch.tensor(label)
-            general_peak_mask = torch.tensor(peak_mask, dtype=torch.bool).unsqueeze(-1)
             event_peak_mask = torch.tensor(event_peak_mask, dtype=torch.bool).unsqueeze(-1)
             event_overall_mask = torch.tensor(event_mask, dtype=torch.bool).unsqueeze(-1)
             
@@ -247,7 +245,7 @@ def report_exp_abstract(exp_dir, reported_param, horizon):
             # metric_mean_std.append("{:.2f}".format(result_df.loc['mean'][metric]) + "\\footnotesize{$\pm$" + "{:.3f}".format(result_df.loc['std'][metric]) + "}")
             # metric_mean_std.append('{:.2f}+{:.3f}'.format(result_df.loc['mean'][metric], result_df.loc['std'][metric]))
             metric_mean_std.append('{:.3f}'.format(result_df.loc['mean'][metric]))
-            latex_str += "& {:.3f}".format(result_df.loc['mean'][metric]) + "$\pm$" + "{:.3f}".format(result_df.loc['std'][metric])
+            latex_str += "& {:.3f}".format(result_df.loc['mean'][metric]) + r"$\pm$" + "{:.3f}".format(result_df.loc['std'][metric])
         print(latex_str) # [1:-1].replace(" & ", "\t& ")
         abstract.append([config_hash] + special_params + metric_mean_std)
     abstract_df = pd.DataFrame(abstract, columns=abstract_header)

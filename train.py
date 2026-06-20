@@ -29,7 +29,7 @@ def load_config(exp_conf_path):
 
     # 加载 data_conf
     data_conf_module = importlib.import_module('config.base_conf.datasets')
-    data_conf = eval('data_conf_module.{}_conf'.format(exp_conf['dataset_name']))
+    data_conf = getattr(data_conf_module, '{}_conf'.format(exp_conf['dataset_name']))
 
     # conf 融合，参数优先级: exp_conf > task_conf = data_conf
     fused_conf = {**task_conf, **data_conf}

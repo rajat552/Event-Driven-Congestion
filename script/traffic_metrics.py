@@ -3,7 +3,7 @@ import sys
 import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from recommendation_engine import CORRIDORS, CORRIDOR_LENGTHS
+from recommendation_engine import CORRIDORS, CORRIDOR_LENGTHS  # noqa: E402
 
 class TrafficMetrics:
     """
