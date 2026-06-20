@@ -18,7 +18,7 @@ class SurrogateT3STID(nn.Module):
     def forward(self, var_x, marker_x):
         # var_x: (B, L, N, 1) -> historical speeds
         # marker_x: (B, L, N, 5) -> event markers (last index is severity)
-        B, L, N, _ = var_x.shape
+        # var_x: (B, L, N, 1) -> historical speeds
         
         # Extract the base normalized speed from the historical window
         base_speed = var_x.mean(dim=1).squeeze(-1) # (B, N)

@@ -122,7 +122,7 @@ class TDSPGraph:
         paths = []
         edge_penalties = {}
         
-        for i in range(k):
+        for _ in range(k):
             path, travel_time = self.solve_tdsp(start_idx, target_idx, departure_time, speed_profile, edge_penalties)
             if not path or travel_time == float('inf'):
                 break
@@ -343,7 +343,7 @@ class InfrastructureOptimizer:
             neighbor_weights = sorted(feeder_corridors.items(), key=lambda x: x[1], reverse=True)
             
             assigned_barricades = 0
-            for n_idx, weight in neighbor_weights:
+            for n_idx, _ in neighbor_weights:
                 if assigned_barricades >= num_barricades:
                     break
                 # Assign up to 2 barricades per intersection to spread them out
@@ -410,8 +410,8 @@ def test_recommendation_engine():
     print("Running K-Shortest Path Query (K=3)...")
     # Find 3 diverse shortest paths from CBD 1 (index 17) to Hosur Road (index 10) starting at time 0 minutes
     paths = graph.solve_k_shortest_tdsp(17, 10, 0.0, mock_speeds, k=3)
-    print(f"Start node: CBD 1 (17)")
-    print(f"End node: Hosur Road (10)")
+    print("Start node: CBD 1 (17)")
+    print("End node: Hosur Road (10)")
     for i, (path, travel_time) in enumerate(paths):
         print(f"Path {i+1}: {[CORRIDORS[node] for node in path]}")
         print(f"  Travel Time: {travel_time:.2f} mins")

@@ -15,7 +15,6 @@ class LiveTrafficStream:
         if self.api_key:
             print(f"Connecting to Live Traffic API with key: {self.api_key[:4]}...")
             # In production, initialize WebSocket or polling mechanism here.
-            pass
         else:
             print("No API Key provided. Falling back to Live Database Streaming mode...")
             

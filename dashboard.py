@@ -602,7 +602,6 @@ if st.sidebar.button("⏩ Fetch Next Frame", use_container_width=True):
     """, unsafe_allow_html=True)
 
     # Auto-mitigation loop
-    from recommendation_engine import CORRIDORS
     speeds_live = api.predict(var_x, marker_x)[0]
     live_severity, _ = metrics.calculate_metrics(speeds_live)
     active_nodes = [evt["c_idx"] for evt in st.session_state.scenario_events]
@@ -619,7 +618,7 @@ if st.sidebar.button("⏩ Fetch Next Frame", use_container_width=True):
             })
             
         # Enhanced anomaly alert
-        st.sidebar.markdown(f"""
+        st.sidebar.markdown("""
         <div style="background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 8px; padding: 0.75rem; margin-top: 0.5rem;">
             <div style="color: #EF4444; font-weight: 600; font-size: 13px;">🚨 Anomaly Detected</div>
             <div style="color: #94A3B8; font-size: 11px; margin-top: 0.25rem;">Auto-mitigation initiated</div>
@@ -1226,7 +1225,6 @@ with tab1:
         # Save scenario button
         st.markdown('<div style="margin-top: 2rem;"></div>', unsafe_allow_html=True)
         if st.button("💾 Save Scenario to Historical Database", use_container_width=True):
-            import time
             first_c_idx = st.session_state.scenario_events[0]["c_idx"] if len(st.session_state.scenario_events) > 0 else 0
             new_event = {
                 "id": int(time.time()),
@@ -1326,7 +1324,6 @@ with tab2:
             
             if st.button("🧠 Append to Training Dataset", use_container_width=True):
                 import subprocess
-                import sys
                 subprocess.Popen([sys.executable, "script/append_retrain.py", "--event_id", str(evt_data["id"])])
                 st.success("✅ Event data queued for ingestion! Background retraining initiated.")
                 

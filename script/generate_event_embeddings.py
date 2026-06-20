@@ -22,7 +22,7 @@ def generate_embeddings():
     doy2emb = {}
     
     print("Processing events and generating embeddings...")
-    for idx, row in df.iterrows():
+    for _, row in df.iterrows():
         start_dt = row['start_datetime']
         if pd.isna(start_dt):
             continue

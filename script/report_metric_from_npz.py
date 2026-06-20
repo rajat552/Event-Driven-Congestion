@@ -188,8 +188,8 @@ def report_trial_result(trial_dir, reported_param=None, horizon="avg"):
             
             # general_overall_mae, general_overall_rmse, general_overall_mape, general_overall_wape = eval_metrics(prediction, label, null_val=0.0)
             # general_peak_mae, general_peak_rmse, general_peak_mape, general_peak_wape = eval_metrics(prediction*general_peak_mask, label*general_peak_mask, null_val=0.0)
-            event_overall_mae, event_overall_rmse, event_overall_mape, event_overall_wape = eval_metrics(prediction*event_overall_mask, label*event_overall_mask, null_val=0.0)
-            event_peak_mae, event_peak_rmse, event_peak_mape, event_peak_wape = eval_metrics(prediction*event_peak_mask, label * event_peak_mask, null_val=0.0)
+            event_overall_mae, event_overall_rmse, event_overall_mape, _ = eval_metrics(prediction*event_overall_mask, label*event_overall_mask, null_val=0.0)
+            event_peak_mae, event_peak_rmse, event_peak_mape, _ = eval_metrics(prediction*event_peak_mask, label * event_peak_mask, null_val=0.0)
             results.append([event_overall_mae, event_overall_rmse, event_overall_mape, 
                             event_peak_mae, event_peak_rmse, event_peak_mape,])
 
