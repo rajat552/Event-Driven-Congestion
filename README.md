@@ -27,6 +27,11 @@ A fully operational, AI-driven traffic decision support system built for Bengalu
 - Features a "Post-Event Analysis" module allowing the system to seamlessly evaluate ground-truth metrics against AI predictions.
 - **One-Click Retraining:** Appends validated scenarios directly into the `feature.npz` dataset and triggers an asynchronous background Ray Tune/PyTorch Lightning retraining job to ensure the AI constantly improves.
 
+### 6. Zero-Gravity UI & Enhanced User Experience
+- **Dynamic Theming:** Features a custom-built Light/Dark mode toggle with premium Glassmorphism design elements.
+- **Robust Database Engine:** Fail-safe historical event logging (`database/historical_events.json`) using robust exception handling to protect session states.
+- **Real-Time Impact Tracking:** Live visual tracking of Economic Impact ($ loss/saved) and Environmental Impact (CO₂ emissions prevented) based on tactical interventions.
+
 ---
 
 ## 📂 Project Structure
