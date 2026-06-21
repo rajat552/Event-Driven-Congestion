@@ -26,7 +26,7 @@ from script.anomaly_detector import AnomalyDetector
 
 # Page Config
 st.set_page_config(
-    page_title="Flipkart Gridlock 2.0 - Event-Driven Congestion",
+    page_title="TrafficSight AI",
     layout="wide",
     initial_sidebar_state="expanded"
 )
