@@ -1,5 +1,7 @@
 # 🛰️ TrafficSight AI
 
+**🌍 Live Demo:** [https://trafficsightai.streamlit.app/](https://trafficsightai.streamlit.app/)
+
 A fully operational, AI-driven traffic decision support system built for Bengaluru's complex urban road networks. This system acts as an end-to-end "Mission Control" center. It forecasts gridlock shockwaves from unplanned events, recommends optimal diversion routes, mathematically allocates police manpower, and generates tactical physical infrastructure strategies (barricading, traffic signals, and active CCTV monitoring).
 
 ## 🏆 Key Capabilities
