@@ -534,8 +534,9 @@ with st.sidebar.expander("🚨 Anomaly Simulation", expanded=True):
             st.info("Scenario cleared.")
 
 with st.sidebar.expander("🧭 Route Planner", expanded=False):
+    show_routes = st.toggle("Show Diversion Routes", value=len(st.session_state.scenario_events) > 0)
     origin = st.selectbox("Origin", CORRIDORS, index=0)
-    destination = st.selectbox("Destination", CORRIDORS, index=10)
+    destination = st.selectbox("Destination", CORRIDORS, index=11)
     start_idx = corridor_to_idx[origin]
     target_idx = corridor_to_idx[destination]
 
@@ -772,8 +773,11 @@ with tab1:
         </div>
         """, unsafe_allow_html=True)
 
-    # Calculate diversion routes
-    paths_mit = graph_mit.solve_k_shortest_tdsp(start_idx, target_idx, selected_t * 10.0, speeds_mit, k=3)
+    # Calculate diversion routes if enabled
+    if show_routes:
+        paths_mit = graph_mit.solve_k_shortest_tdsp(start_idx, target_idx, selected_t * 10.0, speeds_mit, k=3)
+    else:
+        paths_mit = []
 
     # Infrastructure plan
     infra_optimizer = InfrastructureOptimizer(A_static)
