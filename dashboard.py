@@ -534,7 +534,7 @@ with st.sidebar.expander("🚨 Anomaly Simulation", expanded=True):
             st.info("Scenario cleared.")
 
 with st.sidebar.expander("🧭 Route Planner", expanded=False):
-    show_routes = st.toggle("Show Diversion Routes", value=len(st.session_state.scenario_events) > 0)
+    show_routes = st.toggle("Show Diversion Routes", value=False)
     origin = st.selectbox("Origin", CORRIDORS, index=0)
     destination = st.selectbox("Destination", CORRIDORS, index=11)
     start_idx = corridor_to_idx[origin]
